@@ -4,16 +4,20 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import APIKeyHeader
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from control_plane.models import ApiKey, Tenant, TenantPolicy, TenantProvider
-from control_plane.models import TenantConfigSchema, ProviderKeySchema, FailoverPolicySchema
+from control_plane.models import (
+    ApiKey, Tenant, TenantPolicy, TenantProvider,
+    TenantConfigSchema, ProviderKeySchema, FailoverPolicySchema,
+)
 from db.session import get_db
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+_MIN_KEY_LENGTH = 10
+_MAX_KEY_LENGTH = 256
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -27,6 +31,25 @@ def hash_api_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _validate_key_format(api_key: str) -> bool:
+    """Basic sanity check before hitting the database."""
+    return _MIN_KEY_LENGTH <= len(api_key) <= _MAX_KEY_LENGTH
+
+
+async def _update_last_used(key_hash: str, db: AsyncSession) -> None:
+    """Background task — non-blocking last_used_at update."""
+    try:
+        async with db as session:
+            await session.execute(
+                update(ApiKey)
+                .where(ApiKey.key_hash == key_hash)
+                .values(last_used_at=datetime.now(timezone.utc))
+            )
+            await session.commit()
+    except Exception:
+        pass  # Non-critical — never crash auth over a timestamp update
+
+
 async def get_tenant_from_key(
     api_key: Optional[str] = Depends(API_KEY_HEADER),
     db: AsyncSession = Depends(get_db),
@@ -35,12 +58,15 @@ async def get_tenant_from_key(
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
 
+    if not _validate_key_format(api_key):
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
     key_hash = hash_api_key(api_key)
 
     result = await db.execute(
         select(ApiKey).where(
             ApiKey.key_hash == key_hash,
-            ApiKey.status == "active"
+            ApiKey.status == "active",
         )
     )
     api_key_row = result.scalar_one_or_none()
@@ -48,11 +74,11 @@ async def get_tenant_from_key(
     if not api_key_row:
         raise HTTPException(status_code=403, detail="Invalid or inactive API key")
 
-    # Update last_used_at without blocking
-    await db.execute(
-        update(ApiKey)
-        .where(ApiKey.key_hash == key_hash)
-        .values(last_used_at=datetime.now(timezone.utc))
+    # Fire and forget — don't block the request on a timestamp update
+    import asyncio
+    from db.session import AsyncSessionFactory
+    asyncio.create_task(
+        _update_last_used(key_hash, AsyncSessionFactory())
     )
 
     return await load_tenant_config(api_key_row.tenant_id, db)
@@ -89,8 +115,11 @@ async def load_tenant_config(tenant_id, db: AsyncSession) -> TenantConfigSchema:
             automatic=policy.auto_failover if policy else True,
             notify_admin=policy.notify_admin if policy else True,
             fallback_to_local=policy.fallback_to_local if policy else True,
-            budget_usd_monthly=float(policy.budget_usd_monthly) if policy and policy.budget_usd_monthly else None,
+            budget_usd_monthly=(
+                float(policy.budget_usd_monthly)
+                if policy and policy.budget_usd_monthly else None
+            ),
         ),
         masking_enabled=policy.masking_enabled if policy else True,
-        allowed_models=policy.allowed_models if policy else [],
+        allowed_models=policy.allowed_models or [] if policy else [],
     )
