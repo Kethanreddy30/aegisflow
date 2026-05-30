@@ -1,0 +1,137 @@
+# ── Python ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.so
+*.egg
+*.egg-info/
+eggs/
+MANIFEST
+dist/
+build/
+sdist/
+develop-eggs/
+.installed.cfg
+parts/
+var/
+lib/
+lib64/
+
+# ── Virtual Environments (every variant) ─────────────
+.venv/
+.venv.bak/
+venv/
+venv.bak/
+venv*/
+ENV/
+env/
+env.bak/
+virtualenv/
+.virtualenvs/
+.python-version
+
+# ── uv ───────────────────────────────────────────────
+.uv/
+
+# ── Environment Files ────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+.env.staging
+*.env
+
+# ── IDE / Editors ────────────────────────────────────
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ── OS ───────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Testing ──────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.hypothesis/
+nosetests.xml
+test-results/
+junit.xml
+
+# ── Type Checking / Linting ──────────────────────────
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.dmypy.json
+dmypy.json
+
+# ── Logs ─────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+
+# ── Database ─────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Secrets / Keys ───────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+
+# ── Docker ───────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Data Volumes (local) ─────────────────────────────
+postgres_data/
+redis_data/
+grafana_data/
+prometheus_data/
+ollama_data/
+
+# ── Redis ────────────────────────────────────────────
+dump.rdb
+*.rdb
+
+# ── Jupyter ──────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Node (if any tooling) ────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Misc ─────────────────────────────────────────────
+.cache/
+tmp/
+temp/
+.tmp/
+*.bak
+*.orig
