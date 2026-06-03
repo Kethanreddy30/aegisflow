@@ -21,6 +21,9 @@ from gateway.streaming import make_streaming_response, _make_chunk, _make_done
 from registry.provider_registry import resolve_model
 from cache.semantic import get_cached_response, set_cached_response
 from experts.executor import execute_with_failover
+from masking.tokenizer import mask_messages as mask_pii_messages
+from masking.store import MaskStore
+from masking.reconstructor import has_tokens
 
 logger = structlog.get_logger()
 
@@ -55,7 +58,7 @@ async def chat_completions(
         requested_model=request.model,
     )
 
-    # ── Step 1: 3-tier model routing ─────────────────────────────────────────
+    # ── Step 1: 3-tier model routing ──────────────────────────────────────────
     routing = resolve_model(tenant, request.model)
 
     if routing.was_remapped:
@@ -64,8 +67,8 @@ async def chat_completions(
             event_type=AuditEvent.MODEL_REMAPPED,
             payload={
                 "requested": routing.requested_model,
-                "served": routing.resolved_model,
-                "reason": routing.remap_reason,
+                "served":    routing.resolved_model,
+                "reason":    routing.remap_reason,
             },
             db=db,
         )
@@ -76,7 +79,7 @@ async def chat_completions(
 
     resolved = routing.resolved_model
 
-    # ── Step 2: Cache check — skip for streaming ──────────────────────────────
+    # ── Step 2: Cache check — original messages, skip for streaming ───────────
     if not request.stream:
         cached = await get_cached_response(
             redis=redis,
@@ -93,7 +96,7 @@ async def chat_completions(
             )
             return cached
 
-    # ── Step 3: Build messages + options ─────────────────────────────────────
+    # ── Step 3: Build messages list ───────────────────────────────────────────
     messages = [
         {"role": m.role, "content": m.content}
         for m in request.messages
@@ -107,7 +110,28 @@ async def chat_completions(
     if request.top_p is not None:
         options["top_p"] = request.top_p
 
+    # ── Step 3b: Mask PII (non-streaming only) ────────────────────────────────
+    # Streaming masking is deferred — streamed responses are not masked.
+    # This is documented. Streaming clients must not send raw PII.
+    llm_messages = messages
+    token_map: dict = {}
+    mask_store: MaskStore = MaskStore(redis)
+
+    if tenant.masking_enabled and not request.stream:
+        llm_messages, token_map = mask_pii_messages(
+            messages, str(tenant.tenant_id)
+        )
+        if token_map:
+            await mask_store.save_many(token_map, str(tenant.tenant_id))
+            await audit_write(
+                tenant_id=tenant.tenant_id,
+                event_type=AuditEvent.MASKING_APPLIED,
+                payload={"tokens_masked": len(token_map)},
+                db=db,
+            )
+
     # ── Step 4: Streaming path ────────────────────────────────────────────────
+    # NOTE: streaming uses original messages — masking deferred for streams.
     if request.stream:
         async def _stream_generator():
             import os
@@ -123,10 +147,10 @@ async def chat_completions(
                         "POST",
                         f"{OLLAMA_BASE_URL}/api/chat",
                         json={
-                            "model": ollama_model,
-                            "messages": messages,
-                            "stream": True,
-                            "options": options,
+                            "model":    ollama_model,
+                            "messages": messages,       # unmasked — deferred
+                            "stream":   True,
+                            "options":  options,
                         },
                     ) as resp:
                         if resp.status_code != 200:
@@ -148,7 +172,7 @@ async def chat_completions(
                                 continue
 
                             content = part.get("message", {}).get("content", "")
-                            done = part.get("done", False)
+                            done    = part.get("done", False)
 
                             if content:
                                 yield _make_chunk(chunk_id, resolved, content)
@@ -178,11 +202,19 @@ async def chat_completions(
         response = await execute_with_failover(
             tenant=tenant,
             model=resolved,
-            messages=messages,
+            messages=llm_messages,      # masked if masking_enabled
             options=options,
         )
 
-        # Cache the response
+        # ── Step 6: Reconstruct PII in response ───────────────────────────────
+        if token_map and has_tokens(response.choices[0].message.content):
+            restored = await mask_store.restore_all(
+                response.choices[0].message.content,
+                str(tenant.tenant_id),
+            )
+            response.choices[0].message.content = restored
+
+        # Cache the reconstructed (unmasked) response
         await set_cached_response(
             redis=redis,
             tenant_id=str(tenant.tenant_id),
@@ -194,7 +226,12 @@ async def chat_completions(
         await audit_write(
             tenant_id=tenant.tenant_id,
             event_type=AuditEvent.REQUEST_COMPLETED,
-            payload={"model": resolved, "stream": False, "cache_hit": False},
+            payload={
+                "model":      resolved,
+                "stream":     False,
+                "cache_hit":  False,
+                "pii_masked": len(token_map) > 0,
+            },
             db=db,
         )
 

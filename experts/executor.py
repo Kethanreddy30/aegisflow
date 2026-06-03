@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import asyncio
 import structlog
 from typing import Optional
 from fastapi import HTTPException
@@ -72,6 +73,7 @@ async def execute_with_failover(
         return await _call_ollama_direct(model, messages, options)
 
     last_error = None
+    failed_providers = []
 
     for provider in providers:
         if provider.status == "disabled":
@@ -104,7 +106,9 @@ async def execute_with_failover(
                     "OLLAMA_BASE_URL", "http://localhost:11434"
                 )
 
-            response = await acompletion(**kwargs)
+            response = await asyncio.wait_for(acompletion(**kwargs),
+    timeout=30,
+)
             duration_ms = round((time.monotonic() - start) * 1000, 2)
 
             logger.info(
@@ -112,12 +116,15 @@ async def execute_with_failover(
                 provider=provider.provider,
                 model=litellm_model,
                 duration_ms=duration_ms,
+                failover_count=len(failed_providers),
+                failed_providers=failed_providers,
             )
 
             return _litellm_to_schema(response, model)
 
         except Exception as e:
             last_error = e
+            failed_providers.append(provider.provider)
             logger.warning(
                 "provider_call_failed",
                 provider=provider.provider,
@@ -152,13 +159,16 @@ async def _call_ollama_direct(
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
     try:
-        response = await acompletion(
-            model=f"ollama/{ollama_model}",
-            messages=messages,
-            api_base=base_url,
-            api_key="ollama",
-            **options,
-        )
+        response = await asyncio.wait_for(
+    acompletion(
+        model=f"ollama/{ollama_model}",
+        messages=messages,
+        api_base=base_url,
+        api_key="ollama",
+        **options,
+    ),
+    timeout=30,
+)
         return _litellm_to_schema(response, model)
     except Exception as e:
         logger.error("ollama_direct_failed", error=str(e))
