@@ -175,6 +175,15 @@ async def update_policy(
         policy.budget_usd_monthly = request.budget_usd_monthly
     if request.allowed_models is not None:
         policy.allowed_models = request.allowed_models
+    if request.fallback_model is not None:
+        policy.fallback_model = request.fallback_model
+    if request.budget_usd_monthly is not None:
+        policy.budget_usd_monthly = request.budget_usd_monthly
+    if request.allowed_models is not None:
+        policy.allowed_models = request.allowed_models
+    if request.fallback_model is not None:
+        policy.fallback_model = request.fallback_model
+        policy.allowed_models = request.allowed_models
 
     await db.flush()
 

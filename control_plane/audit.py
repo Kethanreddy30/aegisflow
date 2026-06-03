@@ -44,3 +44,4 @@ class AuditEvent:
     REQUEST_COMPLETED   = "request.completed"
     REQUEST_FAILED      = "request.failed"
     POLICY_UPDATED      = "tenant.policy_updated"
+    MODEL_REMAPPED      = "gateway.model_remapped"

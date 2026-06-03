@@ -115,6 +115,7 @@ async def load_tenant_config(tenant_id, db: AsyncSession) -> TenantConfigSchema:
             automatic=policy.auto_failover if policy else True,
             notify_admin=policy.notify_admin if policy else True,
             fallback_to_local=policy.fallback_to_local if policy else True,
+            fallback_model=policy.fallback_model if policy else None,
             budget_usd_monthly=(
                 float(policy.budget_usd_monthly)
                 if policy and policy.budget_usd_monthly else None

@@ -42,6 +42,8 @@ def create_app() -> FastAPI:
     )
 
     from gateway.routes import tenant_router
+    from gateway.proxy import proxy_router
+    app.include_router(proxy_router, tags=["gateway"])
     app.include_router(tenant_router, prefix="/tenant", tags=["tenant"])
 
     @app.get("/health", tags=["system"])

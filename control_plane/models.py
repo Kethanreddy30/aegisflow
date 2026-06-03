@@ -60,6 +60,7 @@ class TenantPolicy(Base):
     budget_usd_monthly = Column(Numeric(10, 4), nullable=True)
     masking_enabled    = Column(Boolean, default=True)
     allowed_models     = Column(ARRAY(Text), default=[])
+    fallback_model     = Column(Text, nullable=True)
 
     tenant = relationship("Tenant", back_populates="policy")
 
@@ -109,6 +110,7 @@ class FailoverPolicySchema(BaseModel):
     notify_admin:       bool            = True
     fallback_to_local:  bool            = True
     budget_usd_monthly: Optional[float] = None
+    fallback_model:     Optional[str]   = None
 
 
 class TenantConfigSchema(BaseModel):
@@ -145,3 +147,4 @@ class PolicyUpdateRequest(BaseModel):
     fallback_to_local:  Optional[bool]      = None
     budget_usd_monthly: Optional[float]     = None
     allowed_models:     Optional[List[str]] = None
+    fallback_model:     Optional[str]       = None
