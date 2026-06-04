@@ -160,15 +160,15 @@ async def _call_ollama_direct(
 
     try:
         response = await asyncio.wait_for(
-    acompletion(
-        model=f"ollama/{ollama_model}",
-        messages=messages,
-        api_base=base_url,
-        api_key="ollama",
-        **options,
-    ),
-    timeout=30,
-)
+            acompletion(
+                model=f"ollama/{ollama_model}",
+                messages=messages,
+                api_base=base_url,
+                api_key="ollama",
+                **options,
+            ),
+            timeout=30.0,
+        )
         return _litellm_to_schema(response, model)
     except Exception as e:
         logger.error("ollama_direct_failed", error=str(e))
