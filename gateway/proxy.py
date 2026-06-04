@@ -24,6 +24,10 @@ from experts.executor import execute_with_failover
 from masking.tokenizer import mask_messages as mask_pii_messages
 from masking.store import MaskStore
 from masking.reconstructor import has_tokens
+from telemetry.metrics import (
+    REQUEST_COUNT, REQUEST_LATENCY, REQUEST_ERRORS,
+    CACHE_HITS, CACHE_MISSES, MASKING_APPLIED,
+)
 
 logger = structlog.get_logger()
 
@@ -53,6 +57,7 @@ async def chat_completions(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
+    _request_start = time.monotonic()
     structlog.contextvars.bind_contextvars(
         tenant_id=str(tenant.tenant_id),
         requested_model=request.model,
@@ -88,6 +93,7 @@ async def chat_completions(
             messages=request.messages,
         )
         if cached:
+            CACHE_HITS.labels(tenant_id=str(tenant.tenant_id), model=resolved).inc()
             await audit_write(
                 tenant_id=tenant.tenant_id,
                 event_type=AuditEvent.REQUEST_COMPLETED,
@@ -123,6 +129,7 @@ async def chat_completions(
         )
         if token_map:
             await mask_store.save_many(token_map, str(tenant.tenant_id))
+            MASKING_APPLIED.labels(tenant_id=str(tenant.tenant_id)).inc()
             await audit_write(
                 tenant_id=tenant.tenant_id,
                 event_type=AuditEvent.MASKING_APPLIED,
@@ -235,12 +242,25 @@ async def chat_completions(
             db=db,
         )
 
+        _duration = time.monotonic() - _request_start
+        REQUEST_LATENCY.labels(
+            tenant_id=str(tenant.tenant_id),
+            model=resolved,
+        ).observe(_duration)
+        REQUEST_COUNT.labels(
+            tenant_id=str(tenant.tenant_id),
+            model=resolved,
+            stream="false",
+            cache_hit="false",
+        ).inc()
+        CACHE_MISSES.labels(tenant_id=str(tenant.tenant_id), model=resolved).inc()
         return response
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error("proxy_error", error=str(e), model=resolved)
+        REQUEST_ERRORS.labels(tenant_id=str(tenant.tenant_id), model=resolved, error_type=type(e).__name__).inc()
         await audit_write(
             tenant_id=tenant.tenant_id,
             event_type=AuditEvent.REQUEST_FAILED,
