@@ -103,11 +103,11 @@ async def execute_with_failover(
             # Ollama needs base_url
             if provider.provider == "ollama":
                 kwargs["api_base"] = os.environ.get(
-                    "OLLAMA_BASE_URL", "http://localhost:11434"
+                    "OLLAMA_URL", "http://localhost:11434"
                 )
 
             response = await asyncio.wait_for(acompletion(**kwargs),
-    timeout=30,
+    timeout=120,
 )
             duration_ms = round((time.monotonic() - start) * 1000, 2)
 
@@ -156,7 +156,7 @@ async def _call_ollama_direct(
     Strips provider prefix if present.
     """
     ollama_model = model.replace("ollama/", "")
-    base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    base_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
     try:
         response = await asyncio.wait_for(
@@ -167,7 +167,7 @@ async def _call_ollama_direct(
                 api_key="ollama",
                 **options,
             ),
-            timeout=30.0,
+            timeout=120.0,
         )
         return _litellm_to_schema(response, model)
     except Exception as e:
