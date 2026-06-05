@@ -1,33 +1,31 @@
 #!/bin/bash
+# AegisFlow — one-command demo start
+# Usage: bash scripts/start_demo.sh
+
 set -e
 
-echo "Starting AegisFlow demo stack..."
-cd "$(dirname "$0")/.."
+echo ""
+echo "=== AegisFlow Demo ==="
+echo ""
 
-# Start infrastructure
-docker compose -f infra/docker-compose.yml up -d --build
+# 1. Start infrastructure
+echo "Starting PostgreSQL + Redis..."
+docker compose -f infra/docker-compose.yml up -d
+sleep 2
 
-echo "Waiting for services..."
-sleep 10
-
-# Pull Ollama model if not present
-echo "Pulling qwen2.5-coder:3b..."
-docker compose -f infra/docker-compose.yml exec ollama \
-  ollama pull qwen2.5-coder:3b
-
-# Run migrations
+# 2. Run migrations
 echo "Running migrations..."
 uv run alembic upgrade head
 
-# Seed demo tenants
+# 3. Seed demo tenants
 echo "Seeding demo tenants..."
-uv run python scripts/seed_tenant.py
+uv run python db/seed.py
 
+# 4. Start gateway
 echo ""
-echo "AegisFlow running:"
-echo "  Gateway:      http://localhost:8000"
-echo "  Docs:         http://localhost:8000/docs"
-echo "  Metrics:      http://localhost:8000/metrics"
-echo "  Prometheus:   http://localhost:9090"
-echo "  Grafana:      http://localhost:3000  (admin / aegisflow)"
-echo "  RedisInsight: http://localhost:8001"
+echo "Starting AegisFlow gateway..."
+echo "Docs:    http://localhost:8000/docs"
+echo "Metrics: http://localhost:8000/metrics"
+echo "Redis:   http://localhost:8001"
+echo ""
+uv run uvicorn gateway.app:app --host 0.0.0.0 --port 8000

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: AegisFlow
+    folder: AegisFlow
+    type: file
+    options:
+      path: /etc/grafana/dashboards
